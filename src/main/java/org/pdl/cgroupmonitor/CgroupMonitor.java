@@ -22,14 +22,14 @@ public class CgroupMonitor {
         numCpuCores = Runtime.getRuntime().availableProcessors();
         cpuUsages = new long[numCpuCores];
         cpuPercents = new double[numCpuCores];
-        updateCpuUsage();
+        updateAll();
         sampleTimer = new Timer(true);
         sampleTimerTask = new TimerTask() {
             public void run() {
                 try {
-                    updateCpuUsage();
+                    updateAll();
                 } catch (IOException ioException) {
-                    resetCpuUsage();
+                    resetAll();
                     sampleTimer.cancel();
                 }
             };
@@ -48,11 +48,19 @@ public class CgroupMonitor {
         return thisToString;
     }
 
+    private void resetAll() {
+        resetCpuUsage();
+    }
+
     private void resetCpuUsage() {
         for (int i = 0; i < numCpuCores; i++) {
             cpuUsages[i] = 0;
             cpuPercents[i] = 0;
         }
+    }
+
+    private void updateAll() throws IOException {
+        updateCpuUsage();
     }
 
     private void updateCpuUsage() throws IOException {
