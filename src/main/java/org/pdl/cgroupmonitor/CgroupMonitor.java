@@ -1,9 +1,12 @@
 package org.pdl.cgroupmonitor;
 
 import java.io.*;
-import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class CgroupMonitor {
+    private String groupName;
     private String cpuUsageFilePath;
     private long interval;
 
@@ -12,10 +15,13 @@ public class CgroupMonitor {
     private long cpuLastUpdate;
     private int numCpuCores;
 
-    private Timer sampleTimer;
-    private TimerTask sampleTimerTask;
+    private Runnable updateRunner;
+    private ScheduledExecutorService scheduler;
 
-    public CgroupMonitor(String mountPoint, String groupName, long interval) throws IOException {
+    public boolean isValid;
+
+    public CgroupMonitor(String mountPoint, final String groupName, long interval) throws IOException {
+        this.groupName = groupName;
         cpuUsageFilePath = mountPoint + "/cpu/" + groupName + "/cpuacct.usage_percpu";
         this.interval = interval;
         cpuLastUpdate = 0;
@@ -23,29 +29,36 @@ public class CgroupMonitor {
         cpuUsages = new long[numCpuCores];
         cpuPercents = new double[numCpuCores];
         updateAll();
-        sampleTimer = new Timer(true);
-        sampleTimerTask = new TimerTask() {
+        isValid = true;
+        updateRunner = new Runnable() {
             public void run() {
                 try {
                     updateAll();
                 } catch (IOException ioException) {
+                    isValid = false;
+                    System.out.println("Error: " + groupName);
                     resetAll();
-                    sampleTimer.cancel();
                 }
-            };
+            }
         };
+        scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.scheduleAtFixedRate(updateRunner, 0, this.interval, TimeUnit.MILLISECONDS);
     }
 
-    public void run() {
-        sampleTimer.schedule(sampleTimerTask, 0, interval);
+    public String getGroupName() {
+        return groupName;
+    }
+
+    public void stop() {
+        scheduler.shutdown();
     }
 
     public String toString() {
-        String thisToString = "";
+        double sumCPUPercent = 0.0;
         for (double cpuPercent : cpuPercents) {
-            thisToString += String.valueOf(cpuPercent) + " ";
+            sumCPUPercent += cpuPercent;
         }
-        return thisToString;
+        return groupName + " " + cpuLastUpdate + " " + sumCPUPercent;
     }
 
     private void resetAll() {
@@ -74,8 +87,8 @@ public class CgroupMonitor {
         String[] currentCpuUsageStrings = cpuUsageStr.split(" ");
         for (int i = 0; i < currentCpuUsageStrings.length; i++) {
             long currentCpuUsage = Long.parseLong(currentCpuUsageStrings[i]);
-            cpuPercents[i] = (double)(currentCpuUsage - cpuUsages[i]) /
-                    (currentTime - cpuLastUpdate) / 1000000000;
+            cpuPercents[i] = (double)(currentCpuUsage - cpuUsages[i]) * 1000 /
+                    (currentTime - cpuLastUpdate) / 10000000;
             cpuUsages[i] = currentCpuUsage;
         }
         cpuLastUpdate = currentTime;
