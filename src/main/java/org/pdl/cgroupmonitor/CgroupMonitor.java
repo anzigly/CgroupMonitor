@@ -20,6 +20,11 @@ public class CgroupMonitor {
 
     public boolean isValid;
 
+    private double currentMaxCpuPercent;
+    private double smoothedMaxCpuPercent;
+    private double sumCpuPercent;
+    private static double alpha = 0.5; //EWMA smoothed factor
+
     public CgroupMonitor(String mountPoint, final String groupName, long interval) throws IOException {
         this.groupName = groupName;
         cpuUsageFilePath = mountPoint + "/cpu/" + groupName + "/cpuacct.usage_percpu";
@@ -30,6 +35,9 @@ public class CgroupMonitor {
         cpuPercents = new double[numCpuCores];
         updateAll();
         isValid = true;
+        currentMaxCpuPercent = 0.0;
+        smoothedMaxCpuPercent = 0.0;
+        sumCpuPercent = 0.0;
         updateRunner = new Runnable() {
             public void run() {
                 try {
@@ -54,11 +62,8 @@ public class CgroupMonitor {
     }
 
     public String toString() {
-        double sumCPUPercent = 0.0;
-        for (double cpuPercent : cpuPercents) {
-            sumCPUPercent += cpuPercent;
-        }
-        return groupName + " " + cpuLastUpdate + " " + sumCPUPercent;
+        return groupName + " " + cpuLastUpdate + " " + currentMaxCpuPercent + " " +
+                smoothedMaxCpuPercent + " " + sumCpuPercent;
     }
 
     private void resetAll() {
@@ -92,5 +97,15 @@ public class CgroupMonitor {
             cpuUsages[i] = currentCpuUsage;
         }
         cpuLastUpdate = currentTime;
+
+        double maxPercent = 0.0;
+        double sumPercent = 0.0;
+        for (double cpuPercent : cpuPercents) {
+            maxPercent = Math.max(cpuPercent, maxPercent);
+            sumPercent += cpuPercent;
+        }
+        this.currentMaxCpuPercent = maxPercent;
+        this.smoothedMaxCpuPercent = this.smoothedMaxCpuPercent * alpha + maxPercent * (1 - alpha);
+        this.sumCpuPercent = this.sumCpuPercent * alpha + sumPercent * (1 - alpha);
     }
 }
